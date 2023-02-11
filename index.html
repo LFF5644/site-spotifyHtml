@@ -1,0 +1,39 @@
+<?
+	const {
+		importHead,
+	}=globals.functions;
+	const services={
+		spotify: service_require("server/spotify/spotify"),
+		account: service_require("server/account/account.new"),
+	};
+?><!DOCTYPE html>
+<html>
+	<head>
+		<?=importHead({
+			input,
+			title:"Spotify Playback",
+			tabs:2,
+			script:["/web/spotifyHtml/app.js"],
+		})?>
+	</head>
+	<body>
+		<h1>Spotify Wiedergabe</h1>
+		<div id=div_playback>
+			<p>Song: <span id=track_name>...</span></p>
+			<p>Gerät: <span id=device_name>...</span></p>
+			<p>
+				<label>Bildgröße: 
+					<select id=select_imgSize disabled onchange="changeImg(this.value,'track_cover');">
+						<option value=640x640>Groß (640x640)</option>
+						<option value=300x300 selected>Normal (300x300)</option>
+						<option value=64x64>Klein (64x64)</option>
+					</select>
+				</label>
+			</p>
+			<p><img id=track_cover src=/files/img/gif/busyGOLD.gif></p>
+		</div>
+		<div class=hidden id=div_noPlayback>
+			<p style="color:red;">Derzeit <u>keine</u> Wiedergabe</p>
+		</div>
+	</body>
+</html>
