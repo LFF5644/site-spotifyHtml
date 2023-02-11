@@ -24,8 +24,6 @@ function HandleServerResponse(data){
 			console.log("Play "+clientAction+" Song!");
 		}
 		else if(clientAction=="getPlayback"){
-			const {track,device}=serverResponse.data.infos;
-			
 			const track_name=document.getElementById("track_name");
 			const device_name=document.getElementById("device_name");
 			const select_imgSize=document.getElementById("select_imgSize");
@@ -33,7 +31,9 @@ function HandleServerResponse(data){
 			const div_noPlayback=document.getElementById("div_noPlayback");
 			const div_playback=document.getElementById("div_playback");
 
-			if(track){
+			if(serverResponse.data.infos){
+				const {track,device}=serverResponse.data.infos;
+
 				track_name.innerText=track.name;
 				device_name.innerText=device.name+` (${device.type}), ${device.volume}%`;
 				select_imgSize.disabled=false;
