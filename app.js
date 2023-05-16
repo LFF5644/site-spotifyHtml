@@ -32,6 +32,23 @@ const model_play={
 		...state,
 		[key]: value,
 	}),
+	setCurrentlyPlayingKey: (state,key,value)=>({
+		...state,
+		currentlyPlaying:{
+			...state.currentlyPlaying,
+			[key]: value,
+		},
+	}),
+	setCurrentlyPlayingProgress: (state,progress)=>({
+		...state,
+		currentlyPlaying:{
+			...state.currentlyPlaying,
+			track:{
+				...state.currentlyPlaying.track,
+				progress,
+			},
+		},
+	}),
 };
 
 function getToken(){
@@ -52,8 +69,10 @@ function ViewOverviewMusikPlayer({state,musikPlayer}){return[
 function ViewOverviewSpotify({state,spotify}){return[
 	node_dom("textarea",{
 		innerHTML: JSON.stringify(spotify.state.currentlyPlaying,null,2).split("\n").join("&#10;"),
-		rows: JSON.stringify(spotify.state.currentlyPlaying,null,2).split("\n").length,
-		width: "100%",
+		rows: JSON.stringify(spotify.state.currentlyPlaying,null,2).split("\n").length+2,
+		S:{
+			width: "100%",
+		},
 	}),
 ]}
 
@@ -70,24 +89,31 @@ init(()=>{
 		const [state,actions]=hook_model(model_play);
 		spotify.state=state;
 		spotify.actions=actions;
+		spotify.socket=hook_memo(()=>io({
+			path: "/bind/socket/currently-playing/spotify",
+			auth: {
+				token: getToken(),
+			}
+		}));
 	}
 	
 	hook_effect(()=>{
 		window.actions=actions;
-		initMusikPlayer:{
+		{
+			// MUSIKPLAYER //
+			// create global variables
 			window.musikPlayer={};
 			window.musikPlayer.actions=musikPlayer.actions;
 		}
-		initSpotify:{
+		{
+			// SPOTIFY //
+			// create global variables
 			window.spotify={};
 			window.spotify.actions=spotify.actions;
-			window.spotify.socket=io({
-				path: "/bind/socket/currently-playing/spotify",
-				auth: {
-					token: getToken(),
-				},
-			});
-			window.spotify.socket.on("init",data=>{
+			window.spotify.socket=spotify.socket;
+
+			// create socket events
+			spotify.socket.on("init",data=>{
 				const {
 					account,
 					allowChangePlayback,
@@ -97,11 +123,16 @@ init(()=>{
 				console.log("allowChangePlayback",allowChangePlayback);
 				spotify.actions.set("allowChangePlayback",allowChangePlayback);
 			});
-			window.spotify.socket.on("set-infos",currentlyPlaying=>{
+			spotify.socket.on("set-infos",currentlyPlaying=>{
 				console.log("currentlyPlaying",currentlyPlaying);
 				spotify.actions.set("currentlyPlaying",currentlyPlaying);
 			});
-			window.spotify.socket.emit("get-infos");
+			spotify.socket.emit("get-infos");
+			spotify.socket.on("change-device",device=>spotify.actions.setCurrentlyPlayingKey("device",device));
+			spotify.socket.on("change-playing",playing=>spotify.actions.setCurrentlyPlayingKey("playing",playing));
+			spotify.socket.on("change-progress",progress=>spotify.actions.setCurrentlyPlayingProgress(progress));
+			spotify.socket.on("change-track",track=>spotify.actions.setCurrentlyPlayingKey("track",track));
+			spotify.socket.onAny(console.log);
 		}
 
 	});
