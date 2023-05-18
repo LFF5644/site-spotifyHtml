@@ -14,7 +14,7 @@ const {
 
 const model={
 	init: ()=>({
-		view: "overview",
+		view: location.hash?location.hash.substring(1):"overview",
 		account: null,
 	}),
 	set: (state,key,value)=>({
@@ -22,7 +22,25 @@ const model={
 		[key]: value,
 	}),
 };
-const model_play={
+const model_musikPlayer={
+	init:()=>({
+		allowChangePlayback: false,
+		connected: false,
+		currentlyPlaying: null,
+	}),
+	set: (state,key,value)=>({
+		...state,
+		[key]: value,
+	}),
+	setCurrentlyPlayingKey: (state,key,value)=>({
+		...state,
+		currentlyPlaying:{
+			...state.currentlyPlaying,
+			[key]: value,
+		},
+	}),
+};
+const model_spotify={
 	init:()=>({
 		allowChangePlayback: false,
 		connected: false,
@@ -71,16 +89,79 @@ function timeToStr(ms){
 
 function ViewOverview({state,musikPlayer,spotify}){return[
 	node_dom("h1[innerText=Übersicht]"),
-	node(ViewOverviewMusikPlayer,{state,musikPlayer}),
-	node(ViewOverviewSpotify,{state,spotify}),
+
+	node_dom("p",null,[
+		node_dom("a[innerText=Musik Player][href=#musikPlayer]"),
+		node_dom("span[innerText=: ]"),
+		node_dom("b",{
+			innerText: musikPlayer.state.currentlyPlaying?musikPlayer.state.currentlyPlaying.track.name:"Keine Wiedergabe",
+		}),
+	]),
+	node_dom("p",null,[
+		node_dom("a[innerText=Spotify][href=#spotify]"),
+		node_dom("span[innerText=: ]"),
+		node_dom("b",{
+			innerText: spotify.state.currentlyPlaying?spotify.state.currentlyPlaying.track.name:"Keine Wiedergabe",
+		}),
+	]),
 
 ]}
-function ViewOverviewMusikPlayer({state,musikPlayer}){return[
-	node_dom("p[innerText=coming later ...]"),
+function ViewMusikPlayer({state,musikPlayer}){return[
+	node_dom("h1[innerHTML=Wiedergabe auf <u style=color:green>Musik Player</u>][style=cursor:pointer]",{
+		onclick:()=>{
+			actions.set("view","overview");
+			history.replaceState(null,"Wiedergabe","/currently-playing");
+		},
+	}),
+
+	musikPlayer.state.currentlyPlaying===null&&
+	node_dom("p[innerText=Keine Wiedergabe][style=color:red]"),
+
+	musikPlayer.state.currentlyPlaying&&
+	node_dom("div",null,[
+		node_dom("p",null,[
+			node_dom("span[innerText=Song: ]"),
+			node_dom("b",{
+				innerText: musikPlayer.state.currentlyPlaying.track.name,
+				S:{ color: musikPlayer.state.currentlyPlaying.isPlaying?"":"red"},
+				title: musikPlayer.state.currentlyPlaying.track.src,
+			}),
+		]),
+		musikPlayer.state.currentlyPlaying.track.trackNumber&&
+		node_dom("p",null,[
+			node_dom("span[innerText=Title Nummer: ]"),
+			node_dom("b",{
+				innerText: musikPlayer.state.currentlyPlaying.track.trackNumber,
+			}),
+		]),
+		musikPlayer.state.currentlyPlaying.track.album&&
+		node_dom("p",null,[
+			node_dom("span[innerText=Album: ]"),
+			node_dom("b",{
+				innerText: musikPlayer.state.currentlyPlaying.track.album,
+			}),
+		]),
+		musikPlayer.state.currentlyPlaying.track.discNumber&&
+		node_dom("p",null,[
+			node_dom("span[innerText=CD: ]"),
+			node_dom("b",{
+				innerText: musikPlayer.state.currentlyPlaying.track.discNumber,
+			}),
+		]),
+		musikPlayer.state.allowChangePlayback&&
+		node_dom("p[innerText=DU HAST RECHTE DEN SONG ZU ÄNDERN DIESE FUNCTION KOMMT BALD!]"),
+	]),
 ]}
-function ViewOverviewSpotify({state,spotify}){return[
+function ViewSpotify({state,spotify}){return[
+	node_dom("h1[innerHTML=Wiedergabe auf <u style=color:green>Spotify</u>][style=cursor:pointer]",{
+		onclick:()=>{
+			actions.set("view","overview");
+			history.replaceState(null,"Wiedergabe","/currently-playing");
+		},
+	}),
+
 	spotify.state.currentlyPlaying===null&&
-	node_dom("p[innerText=Keine Wiedergabe auf Spotify][style=color:red]"),
+	node_dom("p[innerText=Keine Wiedergabe][style=color:red]"),
 
 	spotify.state.currentlyPlaying!==null&&
 	node_dom("div",null,[
@@ -93,7 +174,8 @@ function ViewOverviewSpotify({state,spotify}){return[
 			})
 		]),
 
-		spotify.state.currentlyPlaying.track.imgs.length>2&&
+		spotify.state.currentlyPlaying.track.imgs&&
+		spotify.state.currentlyPlaying.track.imgs.find(item=>item.height===300&&item.width===300)!==-1&&
 		node_dom("p",null,[
 			node_dom("img",{
 				src: spotify.state.currentlyPlaying.track.imgs.find(item=>item.height===300&&item.width===300).url,
@@ -146,13 +228,6 @@ function ViewOverviewSpotify({state,spotify}){return[
 			
 		]),
 	]),
-	node_dom("textarea",{
-		innerHTML: JSON.stringify(spotify.state.currentlyPlaying,null,2).split("\n").join("&#10;"),
-		rows: JSON.stringify(spotify.state.currentlyPlaying,null,2).split("\n").length+2,
-		S:{
-			width: "100%",
-		},
-	}),
 ]}
 
 init(()=>{
@@ -160,12 +235,18 @@ init(()=>{
 	const musikPlayer={};
 	const spotify={};
 	{
-		const [state,actions]=hook_model(model_play);
+		const [state,actions]=hook_model(model_musikPlayer);
 		musikPlayer.state=state;
 		musikPlayer.actions=actions;
+		musikPlayer.socket=hook_memo(()=>io({
+			path: "/bind/socket/currently-playing/musikPlayer",
+			auth: {
+				token: getToken(),
+			}
+		}));
 	}
 	{
-		const [state,actions]=hook_model(model_play);
+		const [state,actions]=hook_model(model_spotify);
 		spotify.state=state;
 		spotify.actions=actions;
 		spotify.socket=hook_memo(()=>io({
@@ -183,6 +264,21 @@ init(()=>{
 			// create global variables
 			window.musikPlayer={};
 			window.musikPlayer.actions=musikPlayer.actions;
+			window.musikPlayer.socket=musikPlayer.socket;
+
+			// create socket events
+			musikPlayer.socket.onAny(console.log);
+			musikPlayer.socket.once("init",data=>{
+				const {
+					account,
+					allowChangePlayback,
+					currentlyPlaying,
+				}=data;
+				actions.set("account",account);
+				musikPlayer.actions.set("allowChangePlayback",allowChangePlayback);
+				musikPlayer.actions.set("currentlyPlaying",currentlyPlaying);
+			});
+			musikPlayer.socket.on("currentlyPlaying",currentlyPlaying=> musikPlayer.actions.set("currentlyPlaying",currentlyPlaying));
 		}
 		{
 			// SPOTIFY //
@@ -192,32 +288,37 @@ init(()=>{
 			window.spotify.socket=spotify.socket;
 
 			// create socket events
-			spotify.socket.on("init",data=>{
+			spotify.socket.once("init",data=>{
 				const {
 					account,
 					allowChangePlayback,
+					currentlyPlaying,
 				}=data;
-				console.log("account",account);
 				actions.set("account",account);
-				console.log("allowChangePlayback",allowChangePlayback);
 				spotify.actions.set("allowChangePlayback",allowChangePlayback);
-			});
-			spotify.socket.on("set-infos",currentlyPlaying=>{
-				console.log("currentlyPlaying",currentlyPlaying);
 				spotify.actions.set("currentlyPlaying",currentlyPlaying);
 			});
+			spotify.socket.on("set-infos",currentlyPlaying=>spotify.actions.set("currentlyPlaying",currentlyPlaying));
 			spotify.socket.emit("get-infos");
 			spotify.socket.on("change-device",device=>spotify.actions.setCurrentlyPlayingKey("device",device));
 			spotify.socket.on("change-playing",playing=>spotify.actions.setCurrentlyPlayingKey("playing",playing));
 			spotify.socket.on("change-progress",progress=>spotify.actions.setCurrentlyPlayingProgress(progress));
 			spotify.socket.on("change-track",track=>spotify.actions.setCurrentlyPlayingKey("track",track));
-			spotify.socket.onAny(console.log);
+			//spotify.socket.onAny(console.log);
 		}
 
 	});
 
-	return[null,[
+	return[{
+		onhashchange:()=> actions.set("view",location.hash?location.hash.substring(1):"overview"),
+	},[
 		state.view==="overview"&&
 		node(ViewOverview,{state,musikPlayer,spotify}),
+
+		state.view==="musikPlayer"&&
+		node(ViewMusikPlayer,{state,musikPlayer}),
+
+		state.view==="spotify"&&
+		node(ViewSpotify,{state,spotify}),
 	]];
 })
