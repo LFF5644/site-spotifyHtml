@@ -27,6 +27,10 @@ const model_musikPlayer={
 		allowChangePlayback: false,
 		connected: false,
 		currentlyPlaying: null,
+		init: false,
+		selected_album: "$all",
+		selected_track: null,
+		tracks: [],
 	}),
 	set: (state,key,value)=>({
 		...state,
@@ -45,6 +49,7 @@ const model_spotify={
 		allowChangePlayback: false,
 		connected: false,
 		currentlyPlaying: null,
+		init: false,
 	}),
 	set: (state,key,value)=>({
 		...state,
@@ -106,7 +111,7 @@ function ViewOverview({state,musikPlayer,spotify}){return[
 	]),
 
 ]}
-function ViewMusikPlayer({state,musikPlayer}){return[
+function ViewMusikPlayer({musikPlayer}){return[
 	node_dom("h1[innerHTML=Wiedergabe auf <u style=color:green>Musik Player</u>][style=cursor:pointer]",{
 		onclick:()=>{
 			actions.set("view","overview");
@@ -149,7 +154,77 @@ function ViewMusikPlayer({state,musikPlayer}){return[
 			}),
 		]),
 		musikPlayer.state.allowChangePlayback&&
-		node_dom("p[innerText=DU HAST RECHTE DEN SONG ZU ÄNDERN DIESE FUNCTION KOMMT BALD!]"),
+		node_dom("div",null,[
+			node_dom("p[innerText=DU HAST RECHTE DEN SONG ZU ÄNDERN DIESE FUNCTION KOMMT BALD!]"),
+			node_dom("p",null,[
+				node_dom("label[innerText=Album: ]"),
+				node_dom("select",{
+					onchange: event=> musikPlayer.actions.set("selected_album",event.target.value==="null"?null:event.target.value),
+				},[
+					node_map(
+						OptionAlbum,
+						[
+							"$all",
+							...Array.from(new Set(musikPlayer.state.tracks.map(item=>item.album?item.album:""))),
+						],
+						{
+							musikPlayer,
+							select: musikPlayer.state.selected_album===null?"":musikPlayer.state.selected_album,
+						}
+					),
+				]),
+				node_dom("button[innerText=Abspielen][style=margin-left:5px]",{
+					onclick:()=>{
+						const tracks=musikPlayer.state.tracks.filter(item=>item.album===musikPlayer.state.selected_album);
+						const track=tracks.find(item=>item.trackNumber===1);
+						if(musikPlayer.state.selected_album==="$all"){
+							musikPlayer.socket.emit("set-playback",0);
+							return;
+						}
+
+						if(track){
+							musikPlayer.socket.emit("set-playback",track.index);
+						}else{
+							musikPlayer.socket.emit("set-playback",tracks[0]);
+						}
+					},
+				}),
+			]),
+			node_dom("table[border=1px]",null,[
+				node_dom("tr",null,[
+					node_dom("th[innerText=Track]"),
+					node_dom("th[innerText=Actions]"),
+				]),
+				node_map(
+					TrTrack,
+					musikPlayer.state.tracks.filter(item=>
+						item.album===musikPlayer.state.selected_album||
+						musikPlayer.state.selected_album==="$all"
+					),
+					{musikPlayer}
+				),
+			]),
+		]),
+	]),
+]}
+function OptionAlbum({I,select,musikPlayer}){return[
+	node_dom("option",{
+		innerText: !I?"-- Ohne --":(I!=="$all"?I:"-- Alle --"),
+		value: !I?"null":(I!=="$all"?I:"$all"),
+		selected: I===select,
+	}),
+]}
+function TrTrack({I,musikPlayer}){return[
+	node_dom("tr",null,[
+		node_dom("td",null,[
+			node_dom("a[href=#about:blank]",{
+				innerText: I.name,
+				onclick: event=>{
+					event.preventDefault();
+					musikPlayer.socket.emit("set-playback",I.index)
+				},
+			}),
+		]),
 	]),
 ]}
 function ViewSpotify({state,spotify}){return[
@@ -273,10 +348,13 @@ init(()=>{
 					account,
 					allowChangePlayback,
 					currentlyPlaying,
+					tracks,
 				}=data;
 				actions.set("account",account);
 				musikPlayer.actions.set("allowChangePlayback",allowChangePlayback);
 				musikPlayer.actions.set("currentlyPlaying",currentlyPlaying);
+				musikPlayer.actions.set("tracks",tracks);
+				musikPlayer.actions.set("init",true);
 			});
 			musikPlayer.socket.on("currentlyPlaying",currentlyPlaying=> musikPlayer.actions.set("currentlyPlaying",currentlyPlaying));
 		}
@@ -297,6 +375,7 @@ init(()=>{
 				actions.set("account",account);
 				spotify.actions.set("allowChangePlayback",allowChangePlayback);
 				spotify.actions.set("currentlyPlaying",currentlyPlaying);
+				spotify.actions.set("init",true);
 			});
 			spotify.socket.on("set-infos",currentlyPlaying=>spotify.actions.set("currentlyPlaying",currentlyPlaying));
 			spotify.socket.emit("get-infos");
@@ -312,12 +391,22 @@ init(()=>{
 	return[{
 		onhashchange:()=> actions.set("view",location.hash?location.hash.substring(1):"overview"),
 	},[
+		!musikPlayer.state.init&&
+		node_dom("h1[innerText=Warte auf Spotify Socket]"),
+
+		!spotify.state.init&&
+		node_dom("h1[innerText=Warte auf Musik Player Socket]"),
+		
+		musikPlayer.state.init&&
+		spotify.state.init&&
 		state.view==="overview"&&
 		node(ViewOverview,{state,musikPlayer,spotify}),
 
+		musikPlayer.state.init&&
 		state.view==="musikPlayer"&&
 		node(ViewMusikPlayer,{state,musikPlayer}),
 
+		spotify.state.init&&
 		state.view==="spotify"&&
 		node(ViewSpotify,{state,spotify}),
 	]];
