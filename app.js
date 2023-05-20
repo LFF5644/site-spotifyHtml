@@ -155,14 +155,13 @@ function ViewMusikPlayer({musikPlayer}){return[
 		]),
 		musikPlayer.state.allowChangePlayback&&
 		node_dom("div",null,[
-			node_dom("p[innerText=DU HAST RECHTE DEN SONG ZU ÄNDERN DIESE FUNCTION KOMMT BALD!]"),
 			node_dom("p",null,[
 				node_dom("label[innerText=Album: ]"),
 				node_dom("select",{
 					onchange: event=> musikPlayer.actions.set("selected_album",event.target.value==="null"?null:event.target.value),
 				},[
 					node_map(
-						OptionAlbum,
+						Album,
 						[
 							"$all",
 							...Array.from(new Set(musikPlayer.state.tracks.map(item=>item.album?item.album:""))),
@@ -190,13 +189,9 @@ function ViewMusikPlayer({musikPlayer}){return[
 					},
 				}),
 			]),
-			node_dom("table[border=1px]",null,[
-				node_dom("tr",null,[
-					node_dom("th[innerText=Track]"),
-					node_dom("th[innerText=Actions]"),
-				]),
+			node_dom("ul",null,[
 				node_map(
-					TrTrack,
+					Track,
 					musikPlayer.state.tracks.filter(item=>
 						item.album===musikPlayer.state.selected_album||
 						musikPlayer.state.selected_album==="$all"
@@ -207,24 +202,22 @@ function ViewMusikPlayer({musikPlayer}){return[
 		]),
 	]),
 ]}
-function OptionAlbum({I,select,musikPlayer}){return[
+function Album({I,select,musikPlayer}){return[
 	node_dom("option",{
 		innerText: !I?"-- Ohne --":(I!=="$all"?I:"-- Alle --"),
 		value: !I?"null":(I!=="$all"?I:"$all"),
 		selected: I===select,
 	}),
 ]}
-function TrTrack({I,musikPlayer}){return[
-	node_dom("tr",null,[
-		node_dom("td",null,[
-			node_dom("a[href=#about:blank]",{
-				innerText: I.name,
-				onclick: event=>{
-					event.preventDefault();
-					musikPlayer.socket.emit("set-playback",I.index)
-				},
-			}),
-		]),
+function Track({I,musikPlayer}){return[
+	node_dom("li",null,[
+		node_dom("a[href=#about:blank]",{
+			innerText: I.name,
+			onclick: event=>{
+				event.preventDefault();
+				musikPlayer.socket.emit("set-playback",I.index)
+			},
+		}),
 	]),
 ]}
 function ViewSpotify({state,spotify}){return[
@@ -391,14 +384,7 @@ init(()=>{
 	return[{
 		onhashchange:()=> actions.set("view",location.hash?location.hash.substring(1):"overview"),
 	},[
-		!musikPlayer.state.init&&
-		node_dom("h1[innerText=Warte auf Spotify Socket]"),
-
-		!spotify.state.init&&
-		node_dom("h1[innerText=Warte auf Musik Player Socket]"),
 		
-		musikPlayer.state.init&&
-		spotify.state.init&&
 		state.view==="overview"&&
 		node(ViewOverview,{state,musikPlayer,spotify}),
 
