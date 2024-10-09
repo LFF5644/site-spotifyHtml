@@ -49,7 +49,10 @@ const model_spotify={
 		allowChangePlayback: false,
 		connected: false,
 		currentlyPlaying: null,
+		devices: [],
 		init: false,
+		playlists: [],
+		tracks: [],
 	}),
 	set: (state,key,value)=>({
 		...state,
@@ -62,15 +65,29 @@ const model_spotify={
 			[key]: value,
 		},
 	}),
-	setCurrentlyPlayingProgress: (state,progress)=>({
+	setCurrentlyPlayingDeviceVolume: (state,volume)=>({
 		...state,
 		currentlyPlaying:{
 			...state.currentlyPlaying,
-			track:{
-				...state.currentlyPlaying.track,
-				progress,
+			device:{
+				...state.currentlyPlaying.device,
+				volume,
 			},
 		},
+	}),
+	setPlaylist: (state,id,playlist)=>({
+		...state,
+		playlists: [
+			...state.playlists.filter(item=>item.id!==id),
+			playlist,
+		],
+	}),
+	setTrack: (state,id,track)=>({
+		...state,
+		tracks: [
+			...state.tracks.filter(item=>item.id!==id),
+			track,
+		],
 	}),
 };
 
@@ -236,10 +253,32 @@ function ViewSpotify({state,spotify}){return[
 		node_dom("p",null,[
 			node_dom("span[innerText=Song: ]"),
 			node_dom("a",{
-				innerText: spotify.state.currentlyPlaying.track.name,
 				href: spotify.state.currentlyPlaying.track.url,
-				onclick:()=> confirm(`Weiter auf Spotify?\n${spotify.state.currentlyPlaying.track.name}\n\n${spotify.state.currentlyPlaying.track.url}`)
-			})
+				innerText: spotify.state.currentlyPlaying.track.name,
+				onclick:()=> confirm(`Weiter auf Spotify?\n${spotify.state.currentlyPlaying.track.name}\n\n${spotify.state.currentlyPlaying.track.url}`),
+				target: "_blank",
+			}),
+		]),
+
+		spotify.state.currentlyPlaying.device&&
+		spotify.state.currentlyPlaying.device.active&&
+		node_dom("p",null,[
+			node_dom("span[innerText=Gerät: ]"),
+			node_dom("span",{
+				innerText: spotify.state.currentlyPlaying.device.name+" ("+spotify.state.currentlyPlaying.device.volume+"%)"
+			}),
+		]),
+
+		spotify.state.currentlyPlaying.source.type==="playlist"&&
+		spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id)&&
+		node_dom("p",null,[
+			node_dom("span[innerText=Playlist: ]"),
+			node_dom("a",{
+				href: spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).url,
+				innerText: spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).name,
+				onclick:()=> confirm(`Weiter auf Spotify?\n${spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).name} von ${spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).ownerName}\n\n${spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).url}`),
+				target: "_blank",
+			}),
 		]),
 
 		spotify.state.currentlyPlaying.track.imgs&&
@@ -258,11 +297,17 @@ function ViewSpotify({state,spotify}){return[
 			},
 		},[
 			node_dom("span",{
-				innerText: timeToStr(spotify.state.currentlyPlaying.track.progress),
+				innerText: timeToStr(spotify.state.currentlyPlaying.progress),
 			}),
-			node_dom("input[disabled=true][type=range][style=margin-right:10px;margin-left:10px]",{
-				value: spotify.state.currentlyPlaying.track.progress,
+			node_dom("input[type=range][style=margin-right:10px;margin-left:10px]",{
+				value: spotify.state.currentlyPlaying.progress,
 				max: spotify.state.currentlyPlaying.track.length,
+				disabled: !spotify.state.allowChangePlayback,
+				oninput: event=> {
+					const position=event.target.value;
+					spotify.socket.emit("set-position",position);
+					spotify.actions.setCurrentlyPlayingKey("progress",position);
+				},
 			}),
 			node_dom("span",{
 				innerText: timeToStr(spotify.state.currentlyPlaying.track.length),
@@ -272,13 +317,29 @@ function ViewSpotify({state,spotify}){return[
 		spotify.state.currentlyPlaying.track.mp3&&
 		node_dom("p[style=display:flex;align-items:center]",null,[
 			node_dom("span[innerText=Rein hören: ]"),
-			node_dom("audio[preload][controls][style=height:20px]",{
+			node_dom("audio[preload=off][controls][style=height:20px]",{
 				src: spotify.state.currentlyPlaying.track.mp3,
 			}),
 		]),
 
 		spotify.state.allowChangePlayback&&
 		node_dom("div",null,[
+			spotify.state.currentlyPlaying&&
+			spotify.state.currentlyPlaying.device.volumeSupport&&
+			node_dom("p[style=display:flex;align-items:center]",null,[
+				node_dom("span[innerText=Lautstärke: ]"),
+				node_dom("input[type=range][max=100][style=margin-right:10px;margin-left:10px]",{
+					value: spotify.state.currentlyPlaying.device.volume,
+					oninput: event=> {
+						const volume=event.target.value;
+						spotify.socket.emit("set-volume",volume);
+						spotify.actions.setCurrentlyPlayingDeviceVolume(volume);
+					},
+				}),
+				node_dom("span",{
+					innerText: spotify.state.currentlyPlaying.device.volume+"%",
+				}),
+			]),
 			node_dom("p",null,[
 				node_dom("button[innerText=<]",{
 					onclick:()=>spotify.socket.emit("playbackAction",{action:"previous"}),
@@ -370,16 +431,28 @@ init(()=>{
 				spotify.actions.set("currentlyPlaying",currentlyPlaying);
 				spotify.actions.set("init",true);
 			});
-			spotify.socket.on("set-infos",currentlyPlaying=>spotify.actions.set("currentlyPlaying",currentlyPlaying));
-			spotify.socket.emit("get-infos");
 			spotify.socket.on("change-device",device=>spotify.actions.setCurrentlyPlayingKey("device",device));
 			spotify.socket.on("change-playing",playing=>spotify.actions.setCurrentlyPlayingKey("playing",playing));
-			spotify.socket.on("change-progress",progress=>spotify.actions.setCurrentlyPlayingProgress(progress));
+			spotify.socket.on("change-progress",progress=>spotify.actions.setCurrentlyPlayingKey("progress",progress));
+			spotify.socket.on("change-source",source=>spotify.actions.setCurrentlyPlayingKey("source",source));
 			spotify.socket.on("change-track",track=>spotify.actions.setCurrentlyPlayingKey("track",track));
-			//spotify.socket.onAny(console.log);
+			spotify.socket.on("change-volume",spotify.actions.setCurrentlyPlayingDeviceVolume);
+			spotify.socket.on("set-infos",currentlyPlaying=>spotify.actions.set("currentlyPlaying",currentlyPlaying));
+			spotify.socket.on("set-playlist",spotify.actions.setPlaylist);
+			spotify.socket.onAny(console.log); // good for debugging :)
+
+			spotify.socket.emit("get-infos");
 		}
 
 	});
+	hook_effect((source,playlists)=>{
+		if(!source) return;
+		if(source.type==="playlist"){
+			if(playlists.find(item=>item.id===source.id)) return;
+			console.log("local-want change-source",source);
+			spotify.socket.emit("get-playlist",source.id);
+		}
+	},[spotify.state.currentlyPlaying?spotify.state.currentlyPlaying.source:null,spotify.state.playlists]);
 
 	return[{
 		onhashchange:()=> actions.set("view",location.hash?location.hash.substring(1):"overview"),
