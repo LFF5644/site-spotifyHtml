@@ -249,6 +249,7 @@ function ViewSpotify({state,spotify}){return[
 	node_dom("p[innerText=Keine Wiedergabe][style=color:red]"),
 
 	spotify.state.currentlyPlaying!==null&&
+	spotify.state.currentlyPlaying.track&&
 	node_dom("div",null,[
 		node_dom("p",null,[
 			node_dom("span[innerText=Song: ]"),
@@ -269,10 +270,14 @@ function ViewSpotify({state,spotify}){return[
 			}),
 		]),
 
+		spotify.state.currentlyPlaying.source&&
 		spotify.state.currentlyPlaying.source.type==="playlist"&&
 		spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id)&&
 		node_dom("p",null,[
-			node_dom("span[innerText=Playlist: ]"),
+			node_dom("a[innerText=Playlist]",{
+				href: "#spotify-playlist-"+spotify.state.currentlyPlaying.source.id,
+			}),
+			node_dom("span[innerText=: ]"),
 			node_dom("a",{
 				href: spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).url,
 				innerText: spotify.state.playlists.find(item=>item.id===spotify.state.currentlyPlaying.source.id).name,
@@ -358,6 +363,64 @@ function ViewSpotify({state,spotify}){return[
 		]),
 	]),
 ]}
+function ViewSpotifyPlaylist({spotify,playlist}){
+	return[
+		node_dom("h1",{
+			innerText: "Playlist "+playlist.name,
+		}),
+
+		node_map(SpotifyPlaylistTrack,playlist.items,{spotify,playlist}),
+	];
+}
+function SpotifyPlaylistTrack({I,spotify,playlist}){
+	const track=spotify.state.tracks.find(item=>item.id===I.id);
+	if(!track) spotify.socket.emit("get-track",I.id);
+	return[
+		!track&&
+		node_dom("p[innerText=Lade Songinfos zu ]",null,[
+			node_dom("code",{innerText: I.id}),
+		]),
+		track&&
+		node_dom("p[style=display:flex;align-items:center]",null,[
+			track.imgs.find(item=>item.width===64&&item.height===64)&&
+			node_dom("img",{
+				src: track.imgs.find(item=>item.width===64&&item.height===64).url,
+			}),
+			node_dom("span",null,[
+				node_dom("a",{
+					href: track.url,
+					innerText: track.name,
+					onclick:()=> confirm(`Weiter auf Spotify?\n${track.name}\n\n${track.url}`),
+					target: "_blank",
+				}),
+				node_dom("br"),
+
+				spotify.state.currentlyPlaying&&
+				spotify.state.currentlyPlaying.track&&
+				spotify.state.currentlyPlaying.track.id===track.id&&
+				node_dom("span[innerText=Wird Abgespielt][style=color:green]"),
+
+				spotify.state.currentlyPlaying&&
+				spotify.state.currentlyPlaying.track&&
+				spotify.state.currentlyPlaying.track.id===track.id&&
+				node_dom("span[innerText=, ]"),
+
+				spotify.state.allowChangePlayback&&
+				node_dom("button[innerText=Abspielen]",{
+					onclick: ()=>{
+						const body={
+							action: "play",
+							context: "spotify:playlist:"+playlist.id,
+							offset: playlist.items.findIndex(item=>item.id===I.id),
+						}
+						console.log(body);
+						spotify.socket.emit("playbackAction",body);
+					},
+				}),
+			]),
+		]),
+	];
+}
 
 init(()=>{
 	const [state,actions]=hook_model(model);
@@ -439,20 +502,23 @@ init(()=>{
 			spotify.socket.on("change-volume",spotify.actions.setCurrentlyPlayingDeviceVolume);
 			spotify.socket.on("set-infos",currentlyPlaying=>spotify.actions.set("currentlyPlaying",currentlyPlaying));
 			spotify.socket.on("set-playlist",spotify.actions.setPlaylist);
+			spotify.socket.on("set-track",spotify.actions.setTrack);
 			spotify.socket.onAny(console.log); // good for debugging :)
 
 			spotify.socket.emit("get-infos");
 		}
 
 	});
-	hook_effect((source,playlists)=>{
-		if(!source) return;
+	hook_effect(sourceId=>{
+		if(!sourceId) return;
+
+		const source=spotify.state.currentlyPlaying.source;
 		if(source.type==="playlist"){
-			if(playlists.find(item=>item.id===source.id)) return;
-			console.log("local-want change-source",source);
-			spotify.socket.emit("get-playlist",source.id);
+			if(spotify.state.playlists.find(item=>item.id===sourceId)) return;
+			console.log("local-want change-source",sourceId);
+			spotify.socket.emit("get-playlist",sourceId);
 		}
-	},[spotify.state.currentlyPlaying?spotify.state.currentlyPlaying.source:null,spotify.state.playlists]);
+	},[spotify.state.currentlyPlaying&&spotify.state.currentlyPlaying.source?spotify.state.currentlyPlaying.source.id:null]);
 
 	return[{
 		onhashchange:()=> actions.set("view",location.hash?location.hash.substring(1):"overview"),
@@ -468,5 +534,18 @@ init(()=>{
 		spotify.state.init&&
 		state.view==="spotify"&&
 		node(ViewSpotify,{state,spotify}),
+
+		spotify.state.init&&
+		state.view.startsWith("spotify-playlist-")&&
+		spotify.state.playlists.find(item=>item.id===state.view.substring(17))&&
+		node(ViewSpotifyPlaylist,{
+			state, spotify,
+			playlist: spotify.state.playlists.find(item=>item.id===state.view.substring(17)),
+		}),
+
+		spotify.state.init&&
+		state.view.startsWith("spotify-playlist-")&&
+		!spotify.state.playlists.find(item=>item.id===state.view.substring(17))&&
+		node_dom("p[innerText=Spotify-Playlist nicht gefunden... sorry]"),
 	]];
 })
