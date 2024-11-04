@@ -31,6 +31,7 @@ const model_musikPlayer={
 		selected_album: "$all",
 		selected_track: null,
 		tracks: [],
+		volume: 50,
 	}),
 	set: (state,key,value)=>({
 		...state,
@@ -237,7 +238,7 @@ function Track({I,musikPlayer}){return[
 		}),
 	]),
 ]}
-function ViewSpotify({state,spotify}){return[
+function ViewSpotify({state,spotify,musikPlayer}){return[
 	node_dom("h1[innerHTML=Wiedergabe auf <u style=color:green>Spotify</u>][style=cursor:pointer]",{
 		onclick:()=>{
 			actions.set("view","overview");
@@ -267,6 +268,14 @@ function ViewSpotify({state,spotify}){return[
 			node_dom("span[innerText=Gerät: ]"),
 			node_dom("span",{
 				innerText: spotify.state.currentlyPlaying.device.name+" ("+spotify.state.currentlyPlaying.device.volume+"%)"
+			}),
+		]),
+		spotify.state.currentlyPlaying.device&&
+		["Zimmer","Server","Lando","Musik","Box"].some(item=>spotify.state.currentlyPlaying.device.name.includes(item))&&
+		node_dom("p",null,[
+			node_dom("span[innerText=Zimmer/Musik-Box/Server Lautstärke: ]"),
+			node_dom("b",{
+				innerText: musikPlayer.state.volume+"%",
 			}),
 		]),
 
@@ -332,7 +341,7 @@ function ViewSpotify({state,spotify}){return[
 			spotify.state.currentlyPlaying&&
 			spotify.state.currentlyPlaying.device.volumeSupport&&
 			node_dom("p[style=display:flex;align-items:center]",null,[
-				node_dom("span[innerText=Lautstärke: ]"),
+				node_dom("span[innerText=Geräte Lautstärke: ]"),
 				node_dom("input[type=range][max=100][style=margin-right:10px;margin-left:10px]",{
 					value: spotify.state.currentlyPlaying.device.volume,
 					oninput: event=> {
@@ -341,8 +350,23 @@ function ViewSpotify({state,spotify}){return[
 						spotify.actions.setCurrentlyPlayingDeviceVolume(volume);
 					},
 				}),
-				node_dom("span",{
+				node_dom("b",{
 					innerText: spotify.state.currentlyPlaying.device.volume+"%",
+				}),
+			]),
+
+			node_dom("p[style=display:flex;align-items:center]",null,[
+				node_dom("span[innerText=Server Lautstärke: ]"),
+				node_dom("input[type=range][max=100][style=margin-right:10px;margin-left:10px]",{
+					value: musikPlayer.state.volume,
+					oninput: event=> {
+						const volume=event.target.value;
+						musikPlayer.socket.emit("set-volume",volume);
+						musikPlayer.actions.set("volume",volume);
+					},
+				}),
+				node_dom("b",{
+					innerText: musikPlayer.state.volume+"%",
 				}),
 			]),
 			node_dom("p",null,[
@@ -366,8 +390,19 @@ function ViewSpotify({state,spotify}){return[
 function ViewSpotifyPlaylist({spotify,playlist}){
 	return[
 		node_dom("h1",{
-			innerText: "Playlist "+playlist.name,
+			innerText: "Playlist",
 		}),
+		node_dom("p[innerText=Name: ]",null,[
+			node_dom("span",{
+				innerText: playlist.name,
+			}),
+		]),
+		playlist.description&&
+		node_dom("p[innerText=Beschreibung: ]",null,[
+			node_dom("span",{
+				innerText: playlist.description,
+			}),
+		]),
 
 		node_map(SpotifyPlaylistTrack,playlist.items,{spotify,playlist}),
 	];
@@ -377,7 +412,7 @@ function SpotifyPlaylistTrack({I,spotify,playlist}){
 	if(!track) spotify.socket.emit("get-track",I.id);
 	return[
 		!track&&
-		node_dom("p[innerText=Lade Songinfos zu ]",null,[
+		node_dom("p[innerText=Lade Song-Infos zu ]",null,[
 			node_dom("code",{innerText: I.id}),
 		]),
 		track&&
@@ -466,13 +501,16 @@ init(()=>{
 					allowChangePlayback,
 					currentlyPlaying,
 					tracks,
+					volume,
 				}=data;
 				actions.set("account",account);
 				musikPlayer.actions.set("allowChangePlayback",allowChangePlayback);
 				musikPlayer.actions.set("currentlyPlaying",currentlyPlaying);
-				musikPlayer.actions.set("tracks",tracks);
 				musikPlayer.actions.set("init",true);
+				musikPlayer.actions.set("tracks",tracks);
+				musikPlayer.actions.set("volume",volume);
 			});
+			musikPlayer.socket.on("change-volume",volume=>musikPlayer.actions.set("volume",volume));
 			musikPlayer.socket.on("currentlyPlaying",currentlyPlaying=> musikPlayer.actions.set("currentlyPlaying",currentlyPlaying));
 		}
 		{
@@ -533,7 +571,7 @@ init(()=>{
 
 		spotify.state.init&&
 		state.view==="spotify"&&
-		node(ViewSpotify,{state,spotify}),
+		node(ViewSpotify,{state,spotify,musikPlayer}),
 
 		spotify.state.init&&
 		state.view.startsWith("spotify-playlist-")&&
